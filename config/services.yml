@@ -1,0 +1,5 @@
+services:
+  # Controller
+  Paygine\Controller\PaymentOrderAdminController:
+    public: true
+    class: Paygine\Controller\PaymentOrderAdminController

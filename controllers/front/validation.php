@@ -8,121 +8,82 @@ class PaygineValidationModuleFrontController extends ModuleFrontController {
 	/**
 	 * @see FrontController::postProcess()
 	 */
+	
 	public function postProcess() {
+		$sector_id = $this->module->sector_id;
+		$password = $this->module->password;
+		$payment_method = $this->module->payment_method;
 		$cart = $this->context->cart;
+		$order_url = $this->context->link->getPageLink('order');
+		$order_history_url = $this->context->link->getPageLink('history');
+		
 		if ($cart->id_customer == 0 || $cart->id_address_delivery == 0 || $cart->id_address_invoice == 0 || !$this->module->active)
-			Tools::redirect('index.php?controller=order&step=1');
-
-		//$authorized = false;
-		//foreach (Module::getPaymentModules() as $module) {
-		//	if ($module['name'] == 'paygine') {
-		//		$authorized = true;
-		//		break;
-		//	}
-		//}
-		//if (!$authorized)
-		//	Tools::redirect('index.php?controller=order&step=1');
-
+			$this->module->redirectWithNotification($order_url);
+		
 		$customer = new Customer($cart->id_customer);
 		if (!Validate::isLoadedObject($customer))
 			Tools::redirect('index.php?controller=order&step=1');
-
+		
+		if (!Validate::isLoadedObject($cart))
+			$this->module->redirectWithNotification($order_history_url);
+		
 		$currency = $this->context->currency;
-		$total = (float)$cart->getOrderTotal(true, Cart::BOTH);
-
+		$total = (float) $cart->getOrderTotal();
+		
 		$this->module->validateOrder($cart->id, Configuration::get('PS_OS_PAYGINE'), $total, $this->module->displayName, NULL, array(), (int)$currency->id, false, $customer->secure_key);
+		
 		$order = new Order($this->module->currentOrder);
+		$reorder_url = $this->context->link->getPageLink('order', true, null, 'submitReorder&id_order=' . (int) $order->id);
+		
 		if (!Validate::isLoadedObject($order))
-			Tools::redirect('index.php?controller=order&step=1');
-
-		$url = $this->registerOrder($order, $customer);
-		if (!$url)
-			Tools::redirect('index.php?controller=order&step=3');
-		else
-			Tools::redirect($url);
-	}
-
-	private function registerOrder($order, $customer) {
+			$this->module->redirectWithNotification($reorder_url, $this->module->l('Validation error'));
+		
 		$currency_obj = new Currency($order->id_currency);
 		if (!Validate::isLoadedObject($currency_obj))
-			return false;
+			$this->module->redirectWithNotification($reorder_url, $this->module->l('Currency error'));
 		$currency = $currency_obj->iso_code_num;
-
-		if (!$this->module->test_mode) {
-			$paygine_url = 'https://pay.paygine.com';
-		} else {
-			$paygine_url = 'https://test.paygine.com';
-		}
-
 		$address = new Address($order->id_address_invoice);
 		if (!Validate::isLoadedObject($address))
-			return false;
-
-		$TAX = (isset($this->module->paygine_tax) && $this->module->paygine_tax > 0 && $this->module->paygine_tax <= 6) ? $this->module->paygine_tax : 6;
-		$fiscalPositions='';
-		$fiscalAmount = 0;
-		foreach ($this->context->cart->getProducts() as $product) {
-			$fiscalPositions .= $product['cart_quantity'] . ';';
-			$fiscalPositions .= $product['price']*100 . ';';
-			$fiscalPositions .= $TAX . ';';
-			$fiscalPositions .= $product['name'] . '|';
-			$fiscalAmount = $fiscalAmount + (intval($product['cart_quantity'])*intval($product['price']*100));
+			$this->module->redirectWithNotification($reorder_url, $this->module->l('Address error'));
+		
+		$tax = (isset($this->module->tax) && $this->module->tax > 0 && $this->module->tax <= 6) ? $this->module->tax : 6;
+		$this->module->calcFiscalPositionsShopCart($order, $tax);
+		
+		$paygine_id = $this->module->registerOrder($order, $customer, $address, $currency);
+		if(!$paygine_id)
+			$this->module->redirectWithNotification($reorder_url, $this->module->l('Failed to create order. Please try later.'));
+		
+		$args = [
+			'sector' => $sector_id,
+			'id' => $paygine_id,
+		];
+		
+		switch($payment_method){
+			case 'two_steps':
+				$payment_path = '/webapi/Authorize';
+				break;
+			case 'halva':
+				$payment_path = '/webapi/custom/svkb/PurchaseWithInstallment';
+				break;
+			case 'halva_two_steps':
+				$payment_path = '/webapi/custom/svkb/AuthorizeWithInstallment';
+				break;
+			case 'sbp':
+				$payment_path = '/webapi/PurchaseSBP';
+				break;
+			default:
+				$payment_path = '/webapi/Purchase';
 		}
-		if ($order->total_shipping > 0) {
-			$fiscalPositions.='1;';
-			$fiscalPositions.=($order->total_shipping*100).';';
-			$fiscalPositions.=$TAX.';';
-			$fiscalPositions.='Доставка'.'|';
-			$fiscalAmount = $fiscalAmount + $order->total_shipping*100;
+		$shop_cart_encoded = '';
+		if(!empty($this->module->shop_cart) && ($payment_method == 'halva' || $payment_method == 'halva_two_steps')) {
+			$shop_cart_encoded = base64_encode(json_encode($this->module->shop_cart, JSON_UNESCAPED_UNICODE));
+			$args['shop_cart'] = $shop_cart_encoded;
 		}
-		$amountDiff = abs($fiscalAmount - intval($order->total_paid * 100));
-		if ($amountDiff != 0){
-			$fiscalPositions.='1'.';';
-			$fiscalPositions.=$amountDiff.';';
-			$fiscalPositions.=$TAX.';';
-			$fiscalPositions.='coupon'.';';
-			$fiscalPositions.='14'.'|';
-			$fiscalAmount = intval($order->total_paid * 100);
-		}
-	    $fiscalPositions = substr($fiscalPositions, 0, -1);
-
-		$signature = base64_encode(md5($this->module->sector_id . intval($order->total_paid * 100) . $currency . $this->module->password));
-		$query = http_build_query(array(
-			'sector' => $this->module->sector_id,
-			'reference' => $order->id,
-			'fiscal_positions' => $fiscalPositions,
-			'amount' => intval($order->total_paid * 100),
-			'description' => sprintf($this->module->l('Order #%s'), $order->reference),
-			'email' => $customer->email,
-			'phone' => $address->phone,
-			'currency' => $currency,
-			'mode' => 1,
-			'url' => $this->context->link->getModuleLink($this->module->name, 'confirmation', array(), true),
-			'signature' => $signature
-		));
-
-		$context = stream_context_create(array(
-			'http' => array(
-				'header'  => "Content-Type: application/x-www-form-urlencoded\r\n"
-					. "Content-Length: " . strlen($query) . "\r\n",
-				'method'  => 'POST',
-				'content' => $query
-			)
-		));
-		if (!$context)
-			return false;
-
-		$old_lvl = error_reporting(0);
-		$paygine_order_id = file_get_contents($paygine_url . '/webapi/Register', false, $context);
-		error_reporting($old_lvl);
-
-		if (intval($paygine_order_id) == 0) {
-			error_log($paygine_order_id);
-			return false;
-		} else {
-			$signature = base64_encode(md5($this->module->sector_id . $paygine_order_id . $this->module->password));
-			return "{$paygine_url}/webapi/Purchase?sector={$this->module->sector_id}&id={$paygine_order_id}&signature={$signature}";
-		}
+		$args['signature'] = base64_encode(md5($sector_id . $paygine_id . $shop_cart_encoded . $password));
+		
+		$url = $this->module->paygine_url . $payment_path . "?" . urldecode(http_build_query($args));
+		// in the current window
+		Tools::redirect($url);
 	}
 
 }

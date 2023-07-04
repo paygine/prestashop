@@ -2,9 +2,9 @@
 <module>
 	<name>paygine</name>
 	<displayName><![CDATA[Paygine]]></displayName>
-	<version><![CDATA[1.0.0]]></version>
+	<version><![CDATA[1.1.2]]></version>
 	<description><![CDATA[Accept payments for your products via credit and debit cards.]]></description>
-	<author><![CDATA[Dennis Prochko]]></author>
+	<author><![CDATA[Paygine]]></author>
 	<tab><![CDATA[payments_gateways]]></tab>
 	<confirmUninstall><![CDATA[Are you sure about uninstall this module?]]></confirmUninstall>
 	<is_configurable>1</is_configurable>

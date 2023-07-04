@@ -1,0 +1,15 @@
+paygine_admin_order_complete:
+  path: paygine/order/complete
+  methods: [GET]
+  defaults:
+    _controller: Paygine\Controller\PaymentOrderAdminController::completeOrderAction
+    _legacy_controller: 'PaymentOrderAdminController'
+    _legacy_link: 'PaymentOrderAdminController'
+
+paygine_admin_order_refund:
+  path: paygine/order/refund
+  methods: [GET]
+  defaults:
+    _controller: Paygine\Controller\PaymentOrderAdminController::refundOrderAction
+    _legacy_controller: 'PaymentOrderAdminController'
+    _legacy_link: 'PaymentOrderAdminController'

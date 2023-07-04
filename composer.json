@@ -1,0 +1,27 @@
+{
+  "name": "paygine/module-paygine",
+  "description": "Paygine integration with payment gateway prestashop",
+  "homepage": "https://paygine.net/",
+  "license": [
+    "GPL-3.0-or-later"
+  ],
+  "authors": [
+    {
+      "name": "Paygine",
+      "email": "helpline@paygine.net"
+    }
+  ],
+  "require": {
+    "php": ">=7.4",
+    "ext-json": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "Paygine\\Controller\\": "src/Controller/"
+    }
+  },
+  "config": {
+    "prepend-autoloader": false
+  },
+  "type": "prestashop-module"
+}
